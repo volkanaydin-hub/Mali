@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Vergi Takvimi_V@lk</title>
+
+<style>
+body{
+ background:#0f172a;
+ color:white;
+ font-family:Arial;
+}
+.container{max-width:1100px;margin:auto;padding:20px;}
+
+.header{
+ display:flex;
+ justify-content:space-between;
+ margin-bottom:10px;
+}
+
+.box{
+ background:#1e293b;
+ padding:15px;
+ border-radius:12px;
+ margin-bottom:15px;
+}
+
+.section{
+ background:#020617;
+ padding:10px;
+ margin-top:8px;
+ border-radius:8px;
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+}
+
+.done{background:#065f46;}
+
+button{padding:6px;border:none;border-radius:6px;background:#38bdf8;}
+button.red{background:#ef4444;}
+button.green{background:#10b981;}
+
+input,select{padding:6px;margin:3px;border-radius:6px;border:none;}
+
+.monthTitle{color:#38bdf8;font-weight:bold;margin-top:10px;}
+
+#calendar{
+ display:grid;
+ grid-template-columns:repeat(7,1fr);
+ border:1px solid #334155;
+}
+
+.dayName{
+ text-align:center;
+ background:#020617;
+ padding:8px;
+ border:1px solid #334155;
+}
+
+.day{
+ border:1px solid #334155;
+ padding:10px;
+ text-align:right;
+ height:60px;
+ position:relative;
+}
+
+.highlight{background:#ef4444;}
+.today{border:2px solid #38bdf8;}
+
+.tooltip{
+ position:absolute;
+ bottom:100%;
+ left:50%;
+ transform:translateX(-50%);
+ background:black;
+ padding:5px;
+ border-radius:5px;
+ display:none;
+ font-size:12px;
+}
+.day:hover .tooltip{display:block;}
+
+.alert{color:red;}
+.alert2{color:orange;}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+  <div id="dateNow"></div>
+  <div id="clock"></div>
+</div>
+
+<h2>📊 Vergi Takvimi PRO</h2>
+
+<!-- TAKVİM -->
+<div class="box">
+<button onclick="changeMonth(-1)">◀</button>
+<button onclick="changeMonth(1)">▶</button>
+<h3 id="monthLabel"></h3>
+<div id="calendar"></div>
+</div>
+
+<!-- UYARI -->
+<div class="box">
+<h3>🚨 Uyarılar</h3>
+<div id="alerts"></div>
+</div>
+
+<!-- FORM -->
+<div class="box">
+
+<h3>🔁 Otomatik</h3>
+<input id="autoName" placeholder="Beyan adı">
+<input id="autoDay" type="number" placeholder="Gün">
+
+<select id="period">
+<option value="monthly">Aylık</option>
+<option value="quarterly">3 Aylık</option>
+<option value="yearly">Yıllık</option>
+</select>
+
+<select id="startMonth">
+<option value="0">Ocak</option>
+<option value="1">Şubat</option>
+<option value="2">Mart</option>
+<option value="3">Nisan</option>
+<option value="4">Mayıs</option>
+<option value="5">Haziran</option>
+<option value="6">Temmuz</option>
+<option value="7">Ağustos</option>
+<option value="8">Eylül</option>
+<option value="9">Ekim</option>
+<option value="10">Kasım</option>
+<option value="11">Aralık</option>
+</select>
+
+<button onclick="generateAuto()">Oluştur</button>
+
+<hr>
+
+<h3>➕ Manuel</h3>
+<input id="name" placeholder="Beyan adı">
+<input id="date" type="date">
+<button onclick="addItem()">Ekle</button>
+
+</div>
+
+<!-- LİSTE -->
+<div class="box">
+<h2>📋 Beyanname & Bildirim Listesi</h2>
+<div id="list"></div>
+<button onclick="exportExcel()">📥 Excel'e Aktar</button>
+</div>
+
+</div>
+
+<script>
+
+const API_URL = "/data";
+
+let items = [];
+let current = new Date();
+let editing = null;
+
+/* ✅ DATA LOAD */
+async function loadData(){
+ let res = await fetch(API_URL);
+ items = await res.json();
+
+ render();
+}
+/* ✅ SAVE */
+async function save(){
+ await fetch(API_URL,{
+   method:"POST",
+   headers:{ "Content-Type":"application/json" },
+   body:JSON.stringify(items)
+ });
+}
+
+/* CLOCK */
+setInterval(()=>{
+ let now=new Date();
+ clock.innerText=now.toLocaleTimeString();
+ dateNow.innerText=now.toLocaleDateString("tr-TR");
+},1000);
+
+/* FORMAT */
+function formatISO(d){
+ return d.getFullYear() + "-" +
+        String(d.getMonth()+1).padStart(2,'0') + "-" +
+        String(d.getDate()).padStart(2,'0');
+}
+
+/* WEEKEND */
+function adjustDate(d){
+ if(d.getDay()==6) d.setDate(d.getDate()+2);
+ if(d.getDay()==0) d.setDate(d.getDate()+1);
+ return d;
+}
+
+/* VALID */
+function validDate(d){
+ let t=new Date(); t.setHours(0,0,0,0);
+ return d>=t;
+}
+
+/* AUTO */
+function generateAuto(){
+ let name = document.getElementById("autoName").value.trim();
+ let day = parseInt(document.getElementById("autoDay").value);
+ let period = document.getElementById("period").value;
+ let startMonth = parseInt(document.getElementById("startMonth").value);
+
+ if(!name || !day){
+  alert("Beyan adı ve gün gir");
+  return;
+ }
+
+ let year=new Date().getFullYear();
+
+ if(period==="monthly"){
+  for(let m=0;m<12;m++){
+    pushItem(name, new Date(year,m,day));
+  }
+ }
+ if(period==="quarterly"){
+  for(let m=startMonth;m<12;m+=3){
+    pushItem(name, new Date(year,m,day));
+  }
+ }
+ if(period==="yearly"){
+  pushItem(name, new Date(year,startMonth,day));
+ }
+
+ save(); render();
+}
+
+function pushItem(name,d){
+ d=adjustDate(d);
+ if(validDate(d)){
+  items.push({name:name,date:formatISO(d),done:false});
+ }
+}
+
+/* MANUAL */
+function addItem(){
+ let n=document.getElementById("name").value.trim();
+ let d=document.getElementById("date").value;
+
+ if(!n || !d){
+  alert("Ad ve tarih gir");
+  return;
+ }
+
+ d=adjustDate(new Date(d));
+
+ if(validDate(d)){
+  items.push({name:n,date:formatISO(d),done:false});
+ }
+
+ save(); render();
+}
+
+/* DONE */
+function toggleDone(i){
+ items[i].done=!items[i].done;
+ save(); render();
+}
+
+/* EDIT */
+function editItem(i){
+ editing=i;
+ render();
+}
+
+function saveEdit(i){
+ let n=document.getElementById("editName").value;
+ let d=document.getElementById("editDate").value;
+
+ items[i].name=n;
+ items[i].date=d;
+
+ editing=null;
+ save(); render();
+}
+
+function deleteEdit(i){
+ items.splice(i,1);
+ editing=null;
+ save(); render();
+}
+
+/* EXPORT */
+function exportExcel(){
+ let csv="Ad,Tarih\n";
+ items.forEach(i=> csv+=i.name+","+i.date+"\n");
+ let blob=new Blob([csv]);
+ let a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="vergi.csv";
+ a.click();
+}
+
+/* RENDER (ORİJİNAL FULL) */
+function render(){
+
+ items=items.filter(i=>validDate(new Date(i.date)));
+
+ let alerts=document.getElementById("alerts");
+ alerts.innerHTML="";
+
+ let todayArr=[],tomorrowArr=[];
+
+ items.forEach(i=>{
+  let days=Math.ceil((new Date(i.date)-new Date())/(1000*60*60*24));
+  if(days===0) todayArr.push(i);
+  if(days===1) tomorrowArr.push(i);
+ });
+
+ if(todayArr.length){
+  alerts.innerHTML+="<b class='alert'>🔴 BUGÜN</b>";
+  todayArr.forEach(i=>alerts.innerHTML+=`<div>${i.name}</div>`);
+ }
+
+ if(tomorrowArr.length){
+  alerts.innerHTML+="<br><b class='alert2'>🟠 YARIN</b>";
+  tomorrowArr.forEach(i=>alerts.innerHTML+=`<div>${i.name}</div>`);
+ }
+
+ let grouped={};
+
+ items.forEach(i=>{
+  let m=new Date(i.date).toLocaleString("tr",{month:"long"});
+  if(!grouped[m]) grouped[m]=[];
+  grouped[m].push(i);
+ });
+
+ let list=document.getElementById("list");
+ list.innerHTML="";
+
+ Object.keys(grouped).forEach(m=>{
+  let box=document.createElement("div");
+  box.innerHTML=`<div class="monthTitle">${m.toUpperCase()}</div>`;
+
+  grouped[m]
+  .sort((a,b)=>new Date(a.date)-new Date(b.date))
+  .forEach(i=>{
+   let idx=items.indexOf(i);
+
+   if(editing===idx){
+    box.innerHTML+=`
+    <div class="section">
+      <input id="editName" value="${i.name}">
+      <input type="date" id="editDate" value="${i.date}">
+      <button onclick="saveEdit(${idx})">Kaydet</button>
+      <button class="red" onclick="deleteEdit(${idx})">Sil</button>
+    </div>`;
+   }else{
+    box.innerHTML+=`
+    <div class="section ${i.done?'done':''}">
+      <button class="green" onclick="toggleDone(${idx})">OK</button>
+      <div>${i.name} - ${i.date}</div>
+      <button onclick="editItem(${idx})">Düzenle</button>
+    </div>`;
+   }
+  });
+
+  list.appendChild(box);
+ });
+
+ drawCalendar();
+}
+
+/* ✅ TAKVİM (GERİ GELDİ) */
+function changeMonth(x){
+ current.setMonth(current.getMonth()+x);
+ drawCalendar();
+}
+
+function drawCalendar(){
+ let cal=document.getElementById("calendar");
+ cal.innerHTML="";
+
+ let y=current.getFullYear();
+ let m=current.getMonth();
+
+ document.getElementById("monthLabel").innerText=
+ new Date(y,m).toLocaleString("tr",{month:"long",year:"numeric"});
+
+ let days=["Pzt","Sal","Çar","Per","Cum","Cts","Paz"];
+
+ days.forEach(d=>{
+  let el=document.createElement("div");
+  el.className="dayName";
+  el.innerText=d;
+  cal.appendChild(el);
+ });
+
+ let first=new Date(y,m,1).getDay();
+ if(first===0) first=7;
+
+ for(let i=1;i<first;i++){
+   cal.appendChild(document.createElement("div"));
+ }
+
+ let last=new Date(y,m+1,0).getDate();
+
+ for(let i=1;i<=last;i++){
+  let d=new Date(y,m,i);
+  let str=formatISO(d);
+
+  let box=document.createElement("div");
+  box.className="day";
+  box.innerText=i;
+
+  let events=items.filter(x=>x.date===str);
+
+  if(events.length){
+   box.classList.add("highlight");
+   let tip=document.createElement("div");
+   tip.className="tooltip";
+   tip.innerText=events.map(e=>e.name).join(", ");
+   box.appendChild(tip);
+  }
+
+  if(str===formatISO(new Date())){
+   box.classList.add("today");
+  }
+
+  cal.appendChild(box);
+ }
+}
+
+/* LOAD */
+drawCalendar();  // ✅ ilk çizim
+loadData();      // ✅ veri gelince güncelle
+``
+
+</script>
+
+</body>
+</html>
